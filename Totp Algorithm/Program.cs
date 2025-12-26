@@ -1,159 +1,77 @@
-﻿using System.Security.Cryptography;
+﻿using System.Text;
+using Totp_Algorithm.Utils;
 
-class TOTPGenerator
+namespace Totp_Algorithm;
+
+class Program
 {
-    static async Task Main()
+    const string Secret = "JBSWY3DPEHPK3PXP";
+
+    static void Main()
     {
-        string secret = "JBSWY3DPEHPK3PXP"; // Base32-encoded secret key
-        int interval = 30; // Time step in seconds
-        int digits = 6; // Number of digits in the TOTP
+        Console.CursorVisible = false; // Hide blinking cursor for cleaner UI
+        var inputBuffer = new StringBuilder();
 
-        Console.WriteLine("Starting TOTP generation and countdown...");
-        await DisplayTOTPWithCountdownAsync(secret, interval, digits);
-    }
-
-    /// <summary>
-    /// Generates a TOTP code based on the given parameters.
-    /// </summary>
-    /// <param name="secret">Base32-encoded secret key</param>
-    /// <param name="interval">Time step in seconds</param>
-    /// <param name="digits">Number of digits in the TOTP</param>
-    /// <returns>The generated TOTP code</returns>
-    static string GenerateTOTP(string secret, int interval, int digits)
-    {
-        byte[] key = Base32Decode(secret);
-        long timeStep = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / interval;
-
-        byte[] counter = BitConverter.GetBytes(timeStep);
-        if (BitConverter.IsLittleEndian)
-        {
-            Array.Reverse(counter);
-        }
-
-        using (HMACSHA1 hmac = new(key))
-        {
-            byte[] hash = hmac.ComputeHash(counter);
-
-            int offset = hash[^1] & 0x0F;
-            int binaryCode =
-                ((hash[offset] & 0x7F) << 24) |
-                ((hash[offset + 1] & 0xFF) << 16) |
-                ((hash[offset + 2] & 0xFF) << 8) |
-                (hash[offset + 3] & 0xFF);
-
-            int otp = binaryCode % (int)Math.Pow(10, digits);
-            return otp.ToString(new string('0', digits));
-        }
-    }
-
-    /// <summary>
-    /// Validates a user-provided TOTP against the generated values within a time window.
-    /// </summary>
-    /// <param name="secret">Base32-encoded secret key</param>
-    /// <param name="interval">Time step in seconds</param>
-    /// <param name="digits">Number of digits in the TOTP</param>
-    /// <param name="inputTotp">TOTP code provided by the user</param>
-    /// <param name="tolerance">Number of steps to check before and after current time</param>
-    /// <returns>True if the TOTP is valid; otherwise, false</returns>
-    static bool ValidateTOTP(string secret, int interval, int digits, string inputTotp, int tolerance = 1)
-    {
-        byte[] key = Base32Decode(secret);
-        long currentStep = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / interval;
-
-        for (int i = -tolerance; i <= tolerance; i++)
-        {
-            long stepToValidate = currentStep + i;
-
-            byte[] counter = BitConverter.GetBytes(stepToValidate);
-            if (BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(counter);
-            }
-
-            using HMACSHA1 hmac = new HMACSHA1(key);
-            byte[] hash = hmac.ComputeHash(counter);
-
-            int offset = hash[^1] & 0x0F;
-            int binaryCode =
-                ((hash[offset] & 0x7F) << 24) |
-                ((hash[offset + 1] & 0xFF) << 16) |
-                ((hash[offset + 2] & 0xFF) << 8) |
-                (hash[offset + 3] & 0xFF);
-
-            int otp = binaryCode % (int)Math.Pow(10, digits);
-            string generatedTotp = otp.ToString(new string('0', digits));
-
-            if (generatedTotp == inputTotp)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Continuously generates and displays TOTP codes with a countdown timer.
-    /// Timer turns red in the last 5 seconds.
-    /// </summary>
-    /// <param name="secret">Base32-encoded secret key</param>
-    /// <param name="interval">Time step in seconds</param>
-    /// <param name="digits">Number of digits in the TOTP</param>
-    static async Task DisplayTOTPWithCountdownAsync(string secret, int interval, int digits)
-    {
         while (true)
         {
-            string totp = GenerateTOTP(secret, interval, digits);
+            // 1. Calculate and Draw UI
+            var remaining = TotpService.GetRemainingSeconds();
+            var code = TotpService.GenerateCode(Secret);
 
-            for (int remaining = interval; remaining > 0; remaining--)
+            Console.SetCursorPosition(0, 0);
+            Console.WriteLine("========================================");
+            Console.WriteLine($" LIVE TOTP: {code}  |  Expires in: {remaining:D2}s   "); 
+            Console.WriteLine("========================================");
+            Console.WriteLine("Type Code & Enter: " + inputBuffer.ToString() + "      "); // Extra spaces to clear old chars
+            Console.WriteLine("----------------------------------------");
+            
+            // 2. Check for User Input (Non-blocking)
+            if (Console.KeyAvailable)
             {
-                if (remaining <= 5)
+                var key = Console.ReadKey(intercept: true); // Read key without printing it automatically
+
+                if (key.Key == ConsoleKey.Enter)
                 {
-                    Console.ForegroundColor = ConsoleColor.Red;
+                    string input = inputBuffer.ToString();
+                    inputBuffer.Clear(); // Clear buffer for next try
+
+                    Console.WriteLine($"\n> Validating '{input}'...");
+                    
+                    bool isValid = TotpService.ValidateCode(Secret, input);
+                    if (isValid)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("  RESULT: VALID [✓]");
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("  RESULT: INVALID [X]");
+                    }
+                    Console.ResetColor();
+                    Console.WriteLine("----------------------------------------");
+                    // Pause briefly so user can see the result before loop redraws too much
+                    Thread.Sleep(1500); 
+                    Console.Clear(); // Clean slate after validation
+                }
+                else if (key.Key == ConsoleKey.Backspace)
+                {
+                    if (inputBuffer.Length > 0)
+                        inputBuffer.Length--;
+                }
+                else if (key.Key == ConsoleKey.Escape)
+                {
+                    break; // Exit app
                 }
                 else
                 {
-                    Console.ResetColor();
+                    // Add character to buffer
+                    inputBuffer.Append(key.KeyChar);
                 }
-
-                Console.Write($"\rTOTP Code: {totp} (Expires in: {remaining} seconds)");
-                await Task.Delay(1000);
             }
 
-            Console.ResetColor();
-            Console.WriteLine();
+            // 3. Small delay to prevent high CPU usage, but fast enough for UI
+            Thread.Sleep(100); 
         }
-    }
-
-    /// <summary>
-    /// Decodes a Base32-encoded string into a byte array.
-    /// </summary>
-    /// <param name="base32">The Base32-encoded string</param>
-    /// <returns>The decoded byte array</returns>
-    /// <exception cref="FormatException">Thrown if the input contains invalid characters</exception>
-    static byte[] Base32Decode(string base32)
-    {
-        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-        base32 = base32.TrimEnd('=').ToUpper();
-
-        int bitBuffer = 0, bitCount = 0, index = 0;
-        byte[] output = new byte[base32.Length * 5 / 8];
-
-        foreach (char c in base32)
-        {
-            int value = alphabet.IndexOf(c);
-            if (value < 0) throw new FormatException("Invalid Base32 character.");
-
-            bitBuffer = (bitBuffer << 5) | value;
-            bitCount += 5;
-
-            if (bitCount >= 8)
-            {
-                output[index++] = (byte)(bitBuffer >> (bitCount - 8));
-                bitCount -= 8;
-            }
-        }
-
-        return output;
     }
 }

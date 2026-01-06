@@ -1,4 +1,7 @@
 # TOTP Generator and Validator in C#
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-blueviolet?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![Docker](https://img.shields.io/badge/Docker-Orchestrated-blue?style=for-the-badge&logo=docker)](https://www.docker.com/)
+
 
 This repository provides a robust, modular, and interactive implementation of a TOTP (Time-Based One-Time Password) generator and validator. It adheres to **RFC 6238** and is compatible with Google Authenticator and Microsoft Authenticator.
 
@@ -111,3 +114,7 @@ MIT License — see [LICENSE](LICENSE)
 
 * [RFC 6238 – TOTP](https://datatracker.ietf.org/doc/html/rfc6238)
 * [RFC 4226 – HOTP](https://datatracker.ietf.org/doc/html/rfc4226)
+
+
+**Created with ❤️ by [Nima Nikoo](https://github.com/nimanikoo)**
+
